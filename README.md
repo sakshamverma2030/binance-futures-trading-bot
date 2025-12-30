@@ -22,7 +22,7 @@ Built for the hiring assignment: *Junior Python Developer – Crypto Trading Bot
  
   pip install python-binance python-dotenv
 
-  ##  Setup
+##  Setup
 1.Clone repo and create .env file:
 BINANCE_API_KEY=your_testnet_api_key
 BINANCE_API_SECRET=your_testnet_api_secret
