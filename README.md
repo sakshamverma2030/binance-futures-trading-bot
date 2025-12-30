@@ -48,16 +48,25 @@ ex: 2025-12-30 23:01:56 | INFO | Order placed: {...}
 ## OUTPUT EXAMPLE
 
 === Order Result ===
+
 symbol: BTCUSDT
+
 side: BUY
+
 type: MARKET
+
 status: FILLED
+
 orderId: 11270273673
+
 price: 0.00
+
 origQty: 0.003
+
 executedQty: 0.003
 
 === Open Orders ===
+
 []
 
 === Open Positions ===
