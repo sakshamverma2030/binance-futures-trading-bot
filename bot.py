@@ -37,17 +37,17 @@ class BasicBot:
             min_price = float(filters["PRICE_FILTER"]["minPrice"])
             tick_size = float(filters["PRICE_FILTER"]["tickSize"])
             if price < min_price:
-                raise ValueError(f"❌ Price {price} below minPrice {min_price}")
+                raise ValueError(f" Price {price} below minPrice {min_price}")
             if round(price / tick_size) * tick_size != price:
-                raise ValueError(f"❌ Price {price} not aligned with tickSize {tick_size}")
+                raise ValueError(f" Price {price} not aligned with tickSize {tick_size}")
 
         if qty:
             min_qty = float(filters["LOT_SIZE"]["minQty"])
             step_size = float(filters["LOT_SIZE"]["stepSize"])
             if qty < min_qty:
-                raise ValueError(f"❌ Qty {qty} below minQty {min_qty}")
+                raise ValueError(f" Qty {qty} below minQty {min_qty}")
             if round(qty / step_size) * step_size != qty:
-                raise ValueError(f"❌ Qty {qty} not aligned with stepSize {step_size}")
+                raise ValueError(f" Qty {qty} not aligned with stepSize {step_size}")
 
     def place_order(self, symbol, side, order_type, quantity, price=None, stop_price=None):
         self.validate_order(symbol, price, quantity)
@@ -123,3 +123,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
