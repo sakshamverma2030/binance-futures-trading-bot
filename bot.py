@@ -3,6 +3,7 @@ import sys
 import time
 import logging
 import argparse
+from decimal import Decimal, ROUND_DOWN
 from dotenv import load_dotenv
 from binance.client import Client
 
@@ -27,48 +28,72 @@ class BasicBot:
         self.client.FUTURES_URL = "https://testnet.binancefuture.com/fapi"
         logger.info(" Binance Futures Testnet client initialized.")
 
-    def validate_order(self, symbol, price=None, qty=None):
-        """Check exchange filters for price and quantity validity."""
+    def _symbol_filters(self, symbol):
+        """Return the exchange filters for one symbol, keyed by filterType."""
         info = self.client.futures_exchange_info()
-        sym_info = next(s for s in info["symbols"] if s["symbol"] == symbol.upper())
-        filters = {f["filterType"]: f for f in sym_info["filters"]}
+        sym_info = next((s for s in info["symbols"] if s["symbol"] == symbol.upper()), None)
+        if sym_info is None:
+            raise ValueError(f" Unknown symbol {symbol.upper()}")
+        return {f["filterType"]: f for f in sym_info["filters"]}
+
+    @staticmethod
+    def _round_down(value, step):
+        """Round value down to a multiple of step, using Decimal to avoid float errors."""
+        step = Decimal(str(step))
+        return (Decimal(str(value)) / step).to_integral_value(rounding=ROUND_DOWN) * step
+
+    def validate_order(self, symbol, price=None, qty=None):
+        """Round price and qty to the symbol's tick and step size, then check the limits.
+
+        Returns (price, qty) as Decimals ready to send.
+        """
+        filters = self._symbol_filters(symbol)
 
         if price:
-            min_price = float(filters["PRICE_FILTER"]["minPrice"])
-            tick_size = float(filters["PRICE_FILTER"]["tickSize"])
-            if price < min_price:
-                raise ValueError(f" Price {price} below minPrice {min_price}")
-            if round(price / tick_size) * tick_size != price:
-                raise ValueError(f" Price {price} not aligned with tickSize {tick_size}")
+            pf = filters["PRICE_FILTER"]
+            price = self._round_down(price, pf["tickSize"])
+            if price < Decimal(pf["minPrice"]):
+                raise ValueError(f" Price {price} below minPrice {pf['minPrice']}")
 
         if qty:
-            min_qty = float(filters["LOT_SIZE"]["minQty"])
-            step_size = float(filters["LOT_SIZE"]["stepSize"])
-            if qty < min_qty:
-                raise ValueError(f" Qty {qty} below minQty {min_qty}")
-            if round(qty / step_size) * step_size != qty:
-                raise ValueError(f" Qty {qty} not aligned with stepSize {step_size}")
+            lot = filters["LOT_SIZE"]
+            qty = self._round_down(qty, lot["stepSize"])
+            if qty < Decimal(lot["minQty"]):
+                raise ValueError(f" Qty {qty} below minQty {lot['minQty']}")
+
+        notional = filters.get("MIN_NOTIONAL")
+        if notional and price and qty:
+            min_notional = Decimal(notional.get("notional", notional.get("minNotional", "0")))
+            if price * qty < min_notional:
+                raise ValueError(f" Order value {price * qty} below minimum notional {min_notional}")
+
+        return price, qty
 
     def place_order(self, symbol, side, order_type, quantity, price=None, stop_price=None):
-        self.validate_order(symbol, price, quantity)
+        if order_type.upper() == "LIMIT" and not price:
+            raise ValueError("LIMIT order requires --price")
+        if order_type.upper() == "STOP_LIMIT" and (not price or not stop_price):
+            raise ValueError("STOP_LIMIT order requires --price and --stop")
 
+        price, quantity = self.validate_order(symbol, price, quantity)
+        if stop_price:
+            stop_price, _ = self.validate_order(symbol, stop_price, None)
+
+        # USDT-M futures calls a stop-limit order "STOP"
+        api_type = "STOP" if order_type.upper() == "STOP_LIMIT" else order_type.upper()
         params = {
             "symbol": symbol.upper(),
             "side": side.upper(),
-            "type": order_type.upper(),
-            "quantity": quantity,
+            "type": api_type,
+            "quantity": str(quantity),
         }
 
         if order_type.upper() == "LIMIT":
-            if not price:
-                raise ValueError("LIMIT order requires --price")
-            params.update({"price": price, "timeInForce": "GTC"})
+            params.update({"price": str(price), "timeInForce": "GTC"})
         elif order_type.upper() == "STOP_LIMIT":
-            if not price or not stop_price:
-                raise ValueError("STOP_LIMIT order requires --price and --stop")
             params.update({
-                "price": price,
-                "stopPrice": stop_price,
+                "price": str(price),
+                "stopPrice": str(stop_price),
                 "timeInForce": "GTC"
             })
 
