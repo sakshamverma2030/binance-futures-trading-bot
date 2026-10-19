@@ -6,9 +6,13 @@ import argparse
 from decimal import Decimal, ROUND_DOWN
 from dotenv import load_dotenv
 from binance.client import Client
+from binance.exceptions import BinanceAPIException
+from requests.exceptions import ConnectionError as NetConnectionError, Timeout
 
 
 LOG_DIR = "logs"
+MAX_TRIES = 3
+RETRY_DELAY = 1.0  # seconds, grows with each try
 os.makedirs(LOG_DIR, exist_ok=True)
 
 logging.basicConfig(
@@ -97,13 +101,35 @@ class BasicBot:
                 "timeInForce": "GTC"
             })
 
+        # Tag the order so a retry after a timeout can find it instead of placing it twice
+        params["newClientOrderId"] = f"bot_{int(time.time() * 1000)}"
+        for attempt in range(1, MAX_TRIES + 1):
+            try:
+                resp = self.client.futures_create_order(**params)
+                logger.info(f"Order placed: {resp}")
+                return resp
+            except BinanceAPIException as e:
+                # 5xx and rate limits are temporary; anything else (bad params, balance) is final
+                if e.status_code < 500 and e.code != -1003:
+                    logger.error(f"Order rejected: {e}")
+                    raise
+                logger.warning(f"Temporary API error (try {attempt}/{MAX_TRIES}): {e}")
+            except (Timeout, NetConnectionError) as e:
+                logger.warning(f"Network error (try {attempt}/{MAX_TRIES}): {e}")
+                existing = self._find_order(params["symbol"], params["newClientOrderId"])
+                if existing:
+                    logger.info(f"Order went through before the timeout: {existing}")
+                    return existing
+            if attempt == MAX_TRIES:
+                raise RuntimeError("Order failed after retries; check open orders before trying again")
+            time.sleep(RETRY_DELAY * attempt)
+
+    def _find_order(self, symbol, client_order_id):
+        """Look up an order by our client id; None if it was never created."""
         try:
-            resp = self.client.futures_create_order(**params)
-            logger.info(f"Order placed: {resp}")
-            return resp
-        except Exception as e:
-            logger.error(f"Order failed: {e}", exc_info=True)
-            raise
+            return self.client.futures_get_order(symbol=symbol, origClientOrderId=client_order_id)
+        except BinanceAPIException:
+            return None
 
     def show_open_orders(self, symbol):
         return self.client.futures_get_open_orders(symbol=symbol.upper())

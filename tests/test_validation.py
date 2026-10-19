@@ -65,3 +65,32 @@ def test_stop_limit_is_sent_as_stop(trader):
     sent = trader.client.futures_create_order.call_args.kwargs
     assert sent["type"] == "STOP"
     assert sent["stopPrice"] == "84500"
+
+
+def _api_error(status, code):
+    from binance.exceptions import BinanceAPIException
+    resp = MagicMock(status_code=status, text='{"code": %d, "msg": "x"}' % code)
+    return BinanceAPIException(resp, status, resp.text)
+
+
+def test_temporary_error_is_retried(trader, monkeypatch):
+    monkeypatch.setattr(bot, "RETRY_DELAY", 0)
+    trader.client.futures_create_order.side_effect = [_api_error(503, -1001), {"status": "NEW"}]
+    assert trader.place_order("BTCUSDT", "BUY", "MARKET", 0.002) == {"status": "NEW"}
+    assert trader.client.futures_create_order.call_count == 2
+
+
+def test_rejected_order_is_not_retried(trader):
+    trader.client.futures_create_order.side_effect = _api_error(400, -2019)
+    with pytest.raises(Exception):
+        trader.place_order("BTCUSDT", "BUY", "MARKET", 0.002)
+    assert trader.client.futures_create_order.call_count == 1
+
+
+def test_timeout_does_not_duplicate_a_filled_order(trader, monkeypatch):
+    from requests.exceptions import Timeout
+    monkeypatch.setattr(bot, "RETRY_DELAY", 0)
+    trader.client.futures_create_order.side_effect = Timeout()
+    trader.client.futures_get_order.return_value = {"status": "FILLED"}
+    assert trader.place_order("BTCUSDT", "BUY", "MARKET", 0.002) == {"status": "FILLED"}
+    assert trader.client.futures_create_order.call_count == 1
