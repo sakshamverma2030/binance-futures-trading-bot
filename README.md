@@ -19,11 +19,11 @@ Built for the hiring assignment: *Junior Python Developer – Crypto Trading Bot
 - Python 3.9+
 - Virtual environment recommended
 - Dependencies:
- 
-  pip install python-binance python-dotenv
+
+  pip install -r requirements.txt
 
 ##  Setup
-1.Clone repo and create .env file:
+1.Clone repo, copy `.env.example` to `.env` and fill in your Testnet keys (never commit `.env`):
 BINANCE_API_KEY=your_testnet_api_key
 BINANCE_API_SECRET=your_testnet_api_secret
 
@@ -38,6 +38,9 @@ python bot.py --symbol BTCUSDT --side BUY --type MARKET --qty 0.003
 
 **Limit Order**
 python bot.py --symbol BTCUSDT --side SELL --type LIMIT --qty 0.002 --price 85000
+
+**Stop-Limit Order**
+python bot.py --symbol BTCUSDT --side SELL --type STOP_LIMIT --qty 0.002 --price 84000 --stop 84500
 
 
 ## Logs
